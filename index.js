@@ -1,4 +1,6 @@
-// import necessary classes from discord.js
+// index.js
+
+// Import necessary classes from discord.js
 const {
     Client,
     GatewayIntentBits,
@@ -8,14 +10,17 @@ const {
     ButtonStyle,
     Collection,
     PermissionsBitField,
-    ChannelType, // Needed for ticket channel creation
-    SlashCommandBuilder, // Needed for slash commands
-    MessageFlags // NEW: For ephemeral responses
+    ChannelType,
+    SlashCommandBuilder,
+    MessageFlags,
+    codeBlock,
 } = require("discord.js");
-const fetch = require('node-fetch'); // import node-fetch for api requests
+const fetch = require('node-fetch'); // Import node-fetch for API requests
+const fs = require('fs').promises; // For file operations (transcript)
+const path = require('path');
 require('dotenv').config();
 
-// create a new client instance
+// Create a new client instance
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -24,7 +29,7 @@ const client = new Client({
     ]
 });
 
-// using client.once("ready", ...) as recommended by discord.js v13+
+// Using client.once("ready", ...) as recommended by discord.js v13+
 client.once("ready", async () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
 
@@ -56,24 +61,33 @@ client.once("ready", async () => {
     }
 });
 
-// shared assets
-const giflink = "https://cdn.discordapp.com/attachments/1395238374821990636/1413382947054026793/a_d6d5ee60cc395389327eb899a67064a7.gif?ex=68bdb531&is=68bc63b1&hm=5c68ad1bc81be55e09bfcaf7fae80b323bd25727af2de72281fa7b9881cc44dd&"; // make sure to replace this with an actual gif link
-const robloxapiicon = giflink; // UPDATED: roblox api icon is now explicitly the giflink
+// Shared assets
+const giflink = "https://cdn.discordapp.com/attachments/1395238374821990636/1413382947054026793/a_d6d5ee60cc395389327eb899a67064a7.gif?ex=68bdb531&is=68bc63b1&hm=5c68ad1bc81be55e09bfcaf7fae80b323bd25727af2de72281fa7b9881cc44dd&";
+const robloxapiicon = giflink;
 
-// store states for each .Mminfo interaction
+// Store states for each .Mminfo interaction
 const mminfoStates = new Collection();
-// store states for each .Mmfee interaction
+// Store states for each .Mmfee interaction
 const mmfeeStates = new Collection();
+// Store thread information by channel ID
+const activeThreads = new Collection();
 
-// define the required role id (Middleman role)
+// Define the required role ID (Middleman role)
 const required_role_id = '1412272828019118202';
 const ticket_category_id = '1412998524756295705'; // YOUR TICKET CATEGORY ID FILLED IN HERE
 const log_channel_id = '1412272906381164557'; // Channel to send ticket logs
 
-// helper function to check permissions
+// Helper function to check permissions
 const hasPermission = (member) => {
-    // check if the member has the specific role or administrator permission
+    // Check if the member has the specific role or administrator permission
     return member.roles.cache.has(required_role_id) || member.permissions.has(PermissionsBitField.Flags.Administrator);
+};
+
+// Helper function to find the ticket creator from channel topic
+const getTicketCreatorId = (topic) => {
+    if (!topic) return null;
+    const match = topic.match(/Creator: <@!(\d+)>/);
+    return match ? match[1] : null;
 };
 
 client.on("messageCreate", async message => {
@@ -82,7 +96,7 @@ client.on("messageCreate", async message => {
     const args = message.content.slice(1).trim().split(/ +/);
     const command = args.shift().toLowerCase();
 
-    // command 1: .Buying
+    // Command 1: .Buying
     if (command === "buying") {
         const embed = new EmbedBuilder()
             .setTitle("**Trade Haven | Sell Your Items**")
@@ -111,7 +125,7 @@ client.on("messageCreate", async message => {
         await message.channel.send({ embeds: [embed] });
     }
 
-    // command 2: .Trade
+    // Command 2: .Trade
     if (command === "trade") {
         const embed = new EmbedBuilder()
             .setTitle("**Trade Haven | Trade With Me**")
@@ -143,7 +157,7 @@ client.on("messageCreate", async message => {
         await message.channel.send({ embeds: [embed] });
     }
 
-    // command 3: .Rules
+    // Command 3: .Rules
     if (command === "rules") {
         const embed = new EmbedBuilder()
             .setTitle("**Trade Haven | Rules**")
@@ -178,7 +192,7 @@ client.on("messageCreate", async message => {
         await message.channel.send({ embeds: [embed], components: [row] });
     }
 
-    // command 4: .About
+    // Command 4: .About
     if (command === "about") {
         const embed = new EmbedBuilder()
             .setTitle("**Trade Haven | About Us**")
@@ -201,7 +215,7 @@ client.on("messageCreate", async message => {
         await message.channel.send({ embeds: [embed], components: [row] });
     }
 
-    // command 5: .Values
+    // Command 5: .Values
     if (command === "values") {
         const embed = new EmbedBuilder()
             .setTitle("**Trade Haven | Values**")
@@ -232,7 +246,7 @@ client.on("messageCreate", async message => {
         await message.channel.send({ embeds: [embed], components: [row] });
     }
 
-    // command 6: .Hitrules
+    // Command 6: .Hitrules
     if (command === "hitrules") {
         const embed = new EmbedBuilder()
             .setTitle("**Trade Haven | Hitter Rules**")
@@ -258,7 +272,7 @@ client.on("messageCreate", async message => {
         await message.channel.send({ embeds: [embed] });
     }
 
-    // command 7: .Hithelp
+    // Command 7: .Hithelp
     if (command === "hithelp") {
         const embed = new EmbedBuilder()
             .setTitle("**Trade Haven | Hit Help**")
@@ -285,7 +299,7 @@ client.on("messageCreate", async message => {
         await message.channel.send({ embeds: [embed] });
     }
 
-    // command 8: .Hitguide
+    // Command 8: .Hitguide
     if (command === "hitguide") {
         const embed = new EmbedBuilder()
             .setTitle("**Trade Haven | Hit Guide**")
@@ -312,9 +326,9 @@ client.on("messageCreate", async message => {
         await message.channel.send({ embeds: [embed] });
     }
 
-    // command 9: .Mminfo
+    // Command 9: .Mminfo
     if (command === "mminfo") {
-        // permission check for .Mminfo
+        // Permission check for .Mminfo
         if (!message.member || !hasPermission(message.member)) {
             return message.reply({ content: "❌ - You do not have permission to use this command.", flags: [MessageFlags.Ephemeral] });
         }
@@ -325,12 +339,11 @@ client.on("messageCreate", async message => {
                 "> `・` *Middleman (MM) is a trusted person with many vouches who helps transactions go smoothly without scams.*\n" +
                 ">\n" +
                 "> `・` __**Example: Trade is NFR Crow for Robux.**__\n\n" +
-                "```\n" +
-                "The Middleman will hold the NFR Crow. After the middleman gets the NFR Crow in their inventory, they will tell the buyer and show the buyer proof they have the NFR Crow, then the buyer will pay the Robux to the seller. Once the buyer has paid and the seller has confirmed that they got it, the middleman will give the NFR Crow to the buyer.\n" +
-                "```"
+                codeBlock("css", `The Middleman will hold the NFR Crow. After the middleman gets the NFR Crow in their inventory, they will tell the buyer and show the buyer proof they have the NFR Crow, then the buyer will pay the Robux to the seller. Once the buyer has paid and the seller has confirmed that they got it, the middleman will give the NFR Crow to the buyer.`) +
+                "\n"
             )
             .setImage("https://cdn.discordapp.com/attachments/1412272937603694653/1415146098963513364/B4D311C6-BEB0-4F4D-A979-C22FFE661D6B-2-1.webp?ex=68c22502&is=68c0d382&hm=3b1e3bc8c034c412becc1fbf45238c762498b1b464f42349b479d13a57e31e8c&")
-            .setColor("#90ee90")
+            .setColor(0x90ee90)
             .setFooter({ text: "Please click the button below, depending if you understand or not" });
 
         const initialRow = new ActionRowBuilder().addComponents(
@@ -367,7 +380,7 @@ client.on("messageCreate", async message => {
                     await interaction.reply({ content: "You've already indicated you understand.", flags: [MessageFlags.Ephemeral] });
                     return;
                 }
-                
+
                 await interaction.deferUpdate();
 
                 state.understoodUsers.add(userId);
@@ -395,8 +408,6 @@ client.on("messageCreate", async message => {
             }
         });
 
-        // The collector's 'end' event should be defined immediately after its creation.
-        // This ensures it's correctly scoped to the collector itself.
         collector.on("end", async (collected, reason) => {
             console.log(`Collector ended for message ${sentMessage.id}. Reason: ${reason}`);
             mminfoStates.delete(sentMessage.id);
@@ -406,7 +417,7 @@ client.on("messageCreate", async message => {
         });
     }
 
-    // command 10: .Form
+    // Command 10: .Form
     if (command === "form") {
         const embed = new EmbedBuilder()
             .setTitle("**Trade Haven | Pre-Trade Questions**")
@@ -422,9 +433,9 @@ client.on("messageCreate", async message => {
         await message.channel.send({ embeds: [embed] });
     }
 
-    // command 11: .Mmfee
+    // Command 11: .Mmfee
     if (command === "mmfee") {
-        // permission check for .Mmfee
+        // Permission check for .Mmfee
         if (!message.member || !hasPermission(message.member)) {
             return message.reply({ content: "❌ - You do not have permission to use this command.", flags: [MessageFlags.Ephemeral] });
         }
@@ -495,7 +506,7 @@ client.on("messageCreate", async message => {
         });
     }
 
-    // command 12: .Roblox <username>
+    // Command 12: .Roblox <username>
     if (command === "roblox") {
         const robloxUsername = args[0];
         if (!robloxUsername) {
@@ -506,7 +517,7 @@ client.on("messageCreate", async message => {
         let actualUsername = robloxUsername;
 
         try {
-            // attempt 1: try to get user id by exact username using post endpoint
+            // Attempt 1: try to get user id by exact username using post endpoint
             const exactUsernameResponse = await fetch('https://users.roblox.com/v1/usernames/users', {
                 method: 'post',
                 headers: {
@@ -523,7 +534,7 @@ client.on("messageCreate", async message => {
                 userId = exactUsernameData.data[0].id;
                 actualUsername = exactUsernameData.data[0].name;
             } else {
-                // attempt 2: fallback to the search endpoint if exact lookup fails
+                // Attempt 2: fallback to the search endpoint if exact lookup fails
                 const searchResponse = await fetch(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(robloxUsername)}&limit=1`);
                 const searchData = await searchResponse.json();
 
@@ -537,27 +548,27 @@ client.on("messageCreate", async message => {
                 return message.reply(`❌ Could not find a Roblox user matching \`${robloxUsername}\`. Please double-check the spelling.`);
             }
 
-            // --- if we reached here, we successfully got a userId ---
+            // --- If we reached here, we successfully got a userId ---
 
-            // step 3: get detailed user info using the user id
+            // Step 3: Get detailed user info using the user id
             const userInfoResponse = await fetch(`https://users.roblox.com/v1/users/${userId}`);
             const userData = await userInfoResponse.json();
 
             if (!userData || userData.errors) {
                 console.error("Roblox user info API error:", userData.errors);
-                // if the user data fails after getting an id, it's a deeper api issue
+                // If the user data fails after getting an id, it's a deeper API issue
                 return message.reply("Failed to fetch detailed Roblox user information after finding the user. The Roblox API might be temporarily unavailable.");
             }
 
-            // step 4: get the user's full avatar (bust or full-body)
-            // using avatar-bust for a more complete image than headshot, adjust size as needed
+            // Step 4: Get the user's full avatar (bust or full-body)
+            // Using avatar-bust for a more complete image than headshot, adjust size as needed
             const avatarResponse = await fetch(`https://thumbnails.roblox.com/v1/users/avatar-bust?userIds=${userId}&size=420x420&format=png&isCircular=false`);
             const avatarData = await avatarResponse.json();
             const avatarUrl = (avatarData.data && avatarData.data.length > 0) ? avatarData.data[0].imageUrl : null;
 
-            // format creation date
+            // Format creation date
             const createdDate = new Date(userData.created);
-            // example: 3/23/2024, 5:47 pm
+            // Example: 3/23/2024, 5:47 pm
             const formattedCreatedDate = createdDate.toLocaleDateString('en-us', {
                 month: 'numeric',
                 day: 'numeric',
@@ -567,7 +578,7 @@ client.on("messageCreate", async message => {
                 hour12: true
             });
 
-            // calculate "x years/months/days ago"
+            // Calculate "x years/months/days ago"
             const now = new Date();
             const diffTime = Math.abs(now.getTime() - createdDate.getTime());
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -644,22 +655,20 @@ client.on("messageCreate", async message => {
                 "> `・` We middleman all things digital, from Roblox Limiteds to in-game items from any game with a trading feature implemented, such as Adopt Me, MM2, Da Hood, and more! Check out <#1412272896180748308> channel for more detailed info."
             )
             .setColor(0x90ee90)
-            .setImage(giflink) // Your giflink as the main image
-            .setThumbnail(giflink) // Your giflink as the thumbnail
+            .setImage(giflink)
+            .setThumbnail(giflink)
             .setFooter({ text: "Trade Haven - Ticket Panel & System", iconURL: giflink });
 
-        // --- UPDATED SECTION FOR THE BUTTON WITH .setEmoji() ---
         const ticketPanelRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId("request_middleman_ticket")
-                .setLabel("Request Middleman") // Text for the button
-                .setEmoji("1415177140478935181") // ONLY the ID for the custom emoji
+                .setLabel("Request Middleman")
+                .setEmoji("1415177140478935181")
                 .setStyle(ButtonStyle.Secondary)
         );
-        // ---------------------------------------------------
 
         await message.channel.send({ embeds: [ticketPanelEmbed], components: [ticketPanelRow] });
-        await message.delete(); // Delete the command message
+        await message.delete();
     }
 });
 
@@ -681,6 +690,7 @@ client.on('interactionCreate', async interaction => {
                 name: `ticket-${member.user.username.toLowerCase().replace(/[^a-z0-9-]/g, '')}`, // Sanitize username
                 type: ChannelType.GuildText,
                 parent: ticket_category_id,
+                topic: `Creator: <@!${member.id}>`, // Set topic to store creator's ID
                 permissionOverwrites: [
                     {
                         id: guild.id, // @everyone role
@@ -697,19 +707,78 @@ client.on('interactionCreate', async interaction => {
                 ],
             });
 
-            await ticketChannel.send({
+            // Create the "Claim Ticket" button
+            const claimButton = new ButtonBuilder()
+                .setCustomId('claim_ticket')
+                .setLabel('Claim Ticket')
+                .setStyle(ButtonStyle.Success);
+
+            const row = new ActionRowBuilder().addComponents(claimButton);
+
+            const initialMessage = await ticketChannel.send({
                 content: `<@${member.id}>, <@&${required_role_id}>: **Ty For Using Trade Haven MM, A Middlemen Will Be With U Soon.**`,
                 embeds: [
                     new EmbedBuilder()
                         .setDescription(`Your Middleman Request Has Been Created! Please Explain Your Trade Details Here.`)
                         .setColor(0x90ee90)
-                ]
+                ],
+                components: [row]
             });
 
             await interaction.reply({ content: `✅ Your Middleman Ticket Has Been Created: ${ticketChannel}`, flags: [MessageFlags.Ephemeral] });
 
+        } else if (interaction.customId === 'claim_ticket') {
+            // Logic for the Claim Ticket button
+            const member = interaction.member;
+            if (!hasPermission(member)) {
+                await interaction.reply({ content: "❌ - You do not have permission to claim this ticket.", flags: [MessageFlags.Ephemeral] });
+                return;
+            }
+
+            // Check if the button is already disabled
+            if (interaction.component.disabled) {
+                await interaction.reply({ content: "❌ This ticket has already been claimed.", flags: [MessageFlags.Ephemeral] });
+                return;
+            }
+
+            await interaction.deferUpdate(); // Acknowledge the button click
+
+            // Get the ticket creator from the channel topic
+            const ticketChannel = interaction.channel;
+            const creatorId = getTicketCreatorId(ticketChannel.topic);
+            const creator = creatorId ? await client.users.fetch(creatorId) : null;
+
+            // Update the button
+            const claimedButton = new ButtonBuilder()
+                .setCustomId('claimed_ticket')
+                .setLabel(`Claimed by @${member.user.username}`)
+                .setStyle(ButtonStyle.Success)
+                .setDisabled(true);
+
+            const updatedRow = new ActionRowBuilder().addComponents(claimedButton);
+
+            await interaction.message.edit({ components: [updatedRow] });
+
+            // Create the private thread
+            const thread = await ticketChannel.threads.create({
+                name: `private-trade-${creator ? creator.username : 'unknown'}`,
+                type: ChannelType.PrivateThread,
+                reason: `Private thread for claimed ticket by ${member.user.username}`,
+            });
+
+            // Add the claiming middleman and ticket creator to the thread
+            await thread.members.add(member.id);
+            if (creator) {
+                await thread.members.add(creator.id);
+            }
+
+            // Store thread information for later use (e.g., /adduser command)
+            activeThreads.set(ticketChannel.id, { threadId: thread.id, claimedBy: member.id });
+
+            // Send initial message in the private thread
+            await thread.send(`✅ This is a private thread for <@${member.id}> and ${creator ? `<@${creator.id}>` : 'the ticket creator'}. The trade can now be discussed here.`);
+
         } else if (interaction.customId.startsWith("mm_")) { // Existing .Mminfo button handling
-            
             const state = mminfoStates.get(interaction.message.id);
             if (!state) {
                 await interaction.reply({ content: "This interaction has expired or is no longer active.", flags: [MessageFlags.Ephemeral] });
@@ -723,20 +792,19 @@ client.on('interactionCreate', async interaction => {
                     await interaction.reply({ content: "You've already indicated you understand.", flags: [MessageFlags.Ephemeral] });
                     return;
                 }
-                await interaction.deferUpdate(); // Defer the button click
+                await interaction.deferUpdate();
                 state.understoodUsers.add(userId);
                 state.notUnderstoodUsers.delete(userId);
                 await interaction.followUp({ content: `✅ <@${userId}> understands how the middleman works.`, flags: [MessageFlags.Ephemeral] });
                 if (state.understoodUsers.size >= 2) {
                      const userArray = Array.from(state.understoodUsers).map(id => `<@${id}>`).join(' and ');
                 }
-
             } else if (interaction.customId === "mm_notunderstand") {
                 if (state.notUnderstoodUsers.has(userId)) {
                     await interaction.reply({ content: "You've already indicated you don't understand. Please ask your MM.", flags: [MessageFlags.Ephemeral] });
                     return;
                 }
-                await interaction.deferUpdate(); // Defer the button click
+                await interaction.deferUpdate();
                 state.notUnderstoodUsers.add(userId);
                 state.understoodUsers.delete(userId);
                 await interaction.followUp({ content: `❌ <@${userId}> doesn't understand. Please ask your middleman to learn.`, flags: [MessageFlags.Ephemeral] });
@@ -744,9 +812,12 @@ client.on('interactionCreate', async interaction => {
         }
     } else if (interaction.isCommand()) { // Handle slash commands
         if (interaction.commandName === 'adduser') {
-            // Check if the command is used in a ticket channel
-            if (!interaction.channel.name.startsWith('ticket-')) {
-                return interaction.reply({ content: "This command can only be used in a middleman ticket channel.", flags: [MessageFlags.Ephemeral] });
+            // Check if the command is used in a ticket channel or its associated thread
+            const isTicketChannel = interaction.channel.name.startsWith('ticket-');
+            const isThread = interaction.channel.isThread() && interaction.channel.parent && interaction.channel.parent.name.startsWith('ticket-');
+
+            if (!isTicketChannel && !isThread) {
+                return interaction.reply({ content: "This command can only be used in a middleman ticket channel or an associated thread.", flags: [MessageFlags.Ephemeral] });
             }
 
             // Check if the user executing the command has the required role (Middleman)
@@ -755,23 +826,38 @@ client.on('interactionCreate', async interaction => {
             }
 
             const targetUser = interaction.options.getUser('target');
-            const ticketChannel = interaction.channel;
+            const ticketChannel = isThread ? interaction.channel.parent : interaction.channel;
+            const thread = isThread ? interaction.channel : null;
 
             try {
+                // Add the user to the main ticket channel
                 await ticketChannel.permissionOverwrites.edit(targetUser.id, {
                     ViewChannel: true,
                     SendMessages: true,
                     ReadMessageHistory: true
                 });
-                await interaction.reply({ content: `✅ <@${targetUser.id}> has been added to this ticket.`, flags: [MessageFlags.Ephemeral] });
+
+                // If an associated thread exists, add the user to it as well
+                if (activeThreads.has(ticketChannel.id)) {
+                    const threadId = activeThreads.get(ticketChannel.id).threadId;
+                    const associatedThread = await ticketChannel.threads.fetch(threadId);
+                    if (associatedThread) {
+                        await associatedThread.members.add(targetUser.id);
+                    }
+                }
+
+                await interaction.reply({ content: `✅ <@${targetUser.id}> has been added to this ticket and its private thread (if one exists).`, flags: [MessageFlags.Ephemeral] });
             } catch (error) {
                 console.error("Error adding user to ticket:", error);
                 await interaction.reply({ content: `❌ Failed to add <@${targetUser.id}> to the ticket. Please ensure the bot has necessary permissions.`, flags: [MessageFlags.Ephemeral] });
             }
         } else if (interaction.commandName === 'close') { // /close command handler
-            // Check if the command is used in a ticket channel
-            if (!interaction.channel.name.startsWith('ticket-')) {
-                return interaction.reply({ content: "This command can only be used in a middleman ticket channel.", flags: [MessageFlags.Ephemeral] });
+            // Check if the command is used in a ticket channel or its associated thread
+            const isTicketChannel = interaction.channel.name.startsWith('ticket-');
+            const isThread = interaction.channel.isThread() && interaction.channel.parent && interaction.channel.parent.name.startsWith('ticket-');
+
+            if (!isTicketChannel && !isThread) {
+                return interaction.reply({ content: "This command can only be used in a middleman ticket channel or an associated thread.", flags: [MessageFlags.Ephemeral] });
             }
 
             // Check if the user executing the command has the required role (Middleman)
@@ -781,7 +867,7 @@ client.on('interactionCreate', async interaction => {
 
             await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
-            const ticketChannel = interaction.channel;
+            const ticketChannel = isThread ? interaction.channel.parent : interaction.channel;
             const logChannel = client.channels.cache.get(log_channel_id);
 
             if (!logChannel) {
@@ -790,13 +876,13 @@ client.on('interactionCreate', async interaction => {
             }
 
             try {
-                // Fetch all messages in the channel
-                const messages = await ticketChannel.messages.fetch({ limit: 100 }); // Fetch last 100 messages, adjust limit if needed
-                const sortedMessages = messages.sort((a, b) => a.createdTimestamp - b.createdTimestamp); // Sort oldest to newest
+                let transcript = `Ticket Transcript for #${ticketChannel.name}\nCreator: ${ticketChannel.topic || 'Unknown'}\nClosed by: ${interaction.user.tag}\nDate: ${new Date().toLocaleString()}\n\n`;
 
-                // Create a transcript (basic text format for now)
-                let transcript = `Ticket Transcript for #${ticketChannel.name}\nCreated by: ${ticketChannel.topic || 'Unknown'}\nClosed by: ${interaction.user.tag}\nDate: ${new Date().toLocaleString()}\n\n`;
-                sortedMessages.forEach(msg => {
+                // Fetch messages from the main ticket channel
+                const mainChannelMessages = await ticketChannel.messages.fetch({ limit: 100 }); // Fetch last 100 messages
+                const sortedMainMessages = mainChannelMessages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+                transcript += "--- Main Channel Messages ---\n\n";
+                sortedMainMessages.forEach(msg => {
                     transcript += `${new Date(msg.createdTimestamp).toLocaleString()} | ${msg.author.tag}: ${msg.content}\n`;
                     if (msg.attachments.size > 0) {
                         msg.attachments.forEach(attachment => {
@@ -804,6 +890,25 @@ client.on('interactionCreate', async interaction => {
                         });
                     }
                 });
+
+                // Fetch messages from the associated thread if one exists
+                if (activeThreads.has(ticketChannel.id)) {
+                    const threadId = activeThreads.get(ticketChannel.id).threadId;
+                    const associatedThread = await ticketChannel.threads.fetch(threadId);
+                    if (associatedThread) {
+                        const threadMessages = await associatedThread.messages.fetch({ limit: 100 });
+                        const sortedThreadMessages = threadMessages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+                        transcript += "\n--- Private Thread Messages ---\n\n";
+                        sortedThreadMessages.forEach(msg => {
+                            transcript += `${new Date(msg.createdTimestamp).toLocaleString()} | ${msg.author.tag}: ${msg.content}\n`;
+                            if (msg.attachments.size > 0) {
+                                msg.attachments.forEach(attachment => {
+                                    transcript += `  Attachment: ${attachment.url}\n`;
+                                });
+                            }
+                        });
+                    }
+                }
 
                 // Send transcript to the log channel as a file
                 const buffer = Buffer.from(transcript, 'utf-8');
@@ -819,13 +924,22 @@ client.on('interactionCreate', async interaction => {
 
                 await interaction.editReply({ content: `✅ Ticket #${ticketChannel.name} closed. Transcript sent to ${logChannel}. This channel will be deleted in 5 seconds.`, flags: [MessageFlags.Ephemeral] });
 
-                // Delete the ticket channel after a delay
+                // Delete the ticket channel and its thread after a delay
                 setTimeout(async () => {
-                    await ticketChannel.delete('Ticket closed by middleman.').catch(err => {
+                    try {
+                        if (activeThreads.has(ticketChannel.id)) {
+                            const threadId = activeThreads.get(ticketChannel.id).threadId;
+                            const associatedThread = await ticketChannel.threads.fetch(threadId);
+                            if (associatedThread) {
+                                await associatedThread.delete('Associated ticket channel is being deleted.');
+                                activeThreads.delete(ticketChannel.id);
+                            }
+                        }
+                        await ticketChannel.delete('Ticket closed by middleman.');
+                    } catch (err) {
                         console.error(`Failed to delete ticket channel ${ticketChannel.name}:`, err);
-                        // Log to log channel if channel deletion fails
                         logChannel.send(`⚠️ Failed to delete ticket channel ${ticketChannel.name} after closing. Error: ${err.message}`).catch(console.error);
-                    });
+                    }
                 }, 5000); // 5 seconds delay
 
             } catch (error) {
