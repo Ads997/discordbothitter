@@ -1,5 +1,3 @@
-// index.js
-
 // Import necessary classes from discord.js
 const {
     Client,
@@ -69,8 +67,6 @@ const robloxapiicon = giflink;
 const mminfoStates = new Collection();
 // Store states for each .Mmfee interaction
 const mmfeeStates = new Collection();
-// Store thread information by channel ID (no longer needed, but keeping for reference)
-const activeThreads = new Collection();
 
 // Define the required role ID (Middleman role)
 const required_role_id = '1412272828019118202';
@@ -279,8 +275,7 @@ client.on("messageCreate", async message => {
             .setDescription("> **Methods to help you get hits**\n\n" +
                 "__**MM2 Method**__\n" +
                 "Just like Adopt Me method but a bit different, if someone is trading like a Harv offer like 10+ smalls, you need to do this because in MM2 you can only trade 4 guns / knives at a time\n\n" +
-                "```Example:```\n\n" +
-                "**Me** - Hey can I offer for your Harv?\n\n" +
+                "                "**Me** - Hey can I offer for your Harv?\n\n" +
                 "**Them** - Sure\n\n" +
                 "**Me** - Would you take like 15 smalls? They add up to 900 value\n\n" +
                 "**Them** - Sure\n\n" +
@@ -728,7 +723,6 @@ client.on('interactionCreate', async interaction => {
             await interaction.reply({ content: `✅ Your Middleman Ticket Has Been Created: ${ticketChannel}`, flags: [MessageFlags.Ephemeral] });
 
         } else if (interaction.customId === 'claim_ticket') {
-            // Logic for the Claim Ticket button
             const member = interaction.member;
             const ticketChannel = interaction.channel;
 
@@ -737,17 +731,14 @@ client.on('interactionCreate', async interaction => {
                 return;
             }
 
-            // Check if the button is already disabled by checking the original message's components
             const originalComponents = interaction.message.components;
             if (originalComponents.length > 0 && originalComponents[0].components[0].disabled) {
                 await interaction.reply({ content: "❌ This ticket has already been claimed.", flags: [MessageFlags.Ephemeral] });
                 return;
             }
 
-            // Acknowledge the button click and edit the original message
             await interaction.deferUpdate();
 
-            // Get the ticket creator from the channel topic
             const creatorId = getTicketCreatorId(ticketChannel.topic);
 
             // Create the new green embed
@@ -769,6 +760,11 @@ client.on('interactionCreate', async interaction => {
                     ViewChannel: false,
                 });
 
+                // Now, allow view access for the Middleman role so they can still see it
+                await ticketChannel.permissionOverwrites.edit(required_role_id, {
+                    ViewChannel: true,
+                });
+
                 // Allow access for the ticket opener
                 if (creatorId) {
                     await ticketChannel.permissionOverwrites.edit(creatorId, {
@@ -786,7 +782,7 @@ client.on('interactionCreate', async interaction => {
                 });
 
                 // Send a message in the channel confirming the claim and the lock
-                await ticketChannel.send(`✅ <@${member.id}> has claimed this ticket. The channel is now locked to all members except the ticket creator and the claiming middleman.`);
+                await ticketChannel.send(`✅ Ticket claimed by <@${member.id}>. The channel is now locked to non-middleman users, but other middlemen can still view it.`);
 
             } catch (error) {
                 console.error("Error setting permissions after claim:", error);
