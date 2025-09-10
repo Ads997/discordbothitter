@@ -275,7 +275,7 @@ client.on("messageCreate", async message => {
             .setDescription("> **Methods to help you get hits**\n\n" +
                 "__**MM2 Method**__\n" +
                 "Just like Adopt Me method but a bit different, if someone is trading like a Harv offer like 10+ smalls, you need to do this because in MM2 you can only trade 4 guns / knives at a time\n\n" +
-                "                "**Me** - Hey can I offer for your Harv?\n\n" +
+                                "**Me** - Hey can I offer for your Harv?\n\n" +
                 "**Them** - Sure\n\n" +
                 "**Me** - Would you take like 15 smalls? They add up to 900 value\n\n" +
                 "**Them** - Sure\n\n" +
