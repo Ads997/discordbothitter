@@ -69,7 +69,7 @@ const robloxapiicon = giflink;
 const mminfoStates = new Collection();
 // Store states for each .Mmfee interaction
 const mmfeeStates = new Collection();
-// Store thread information by channel ID
+// Store thread information by channel ID (no longer needed, but keeping for reference)
 const activeThreads = new Collection();
 
 // Define the required role ID (Middleman role)
@@ -710,7 +710,7 @@ client.on('interactionCreate', async interaction => {
             // Create the "Claim Ticket" button
             const claimButton = new ButtonBuilder()
                 .setCustomId('claim_ticket')
-                .setLabel('Claim Ticket')
+                .setLabel('🙋‍♂️ Claim') // Use the emoji here
                 .setStyle(ButtonStyle.Success);
 
             const row = new ActionRowBuilder().addComponents(claimButton);
@@ -730,53 +730,68 @@ client.on('interactionCreate', async interaction => {
         } else if (interaction.customId === 'claim_ticket') {
             // Logic for the Claim Ticket button
             const member = interaction.member;
+            const ticketChannel = interaction.channel;
+
             if (!hasPermission(member)) {
                 await interaction.reply({ content: "❌ - You do not have permission to claim this ticket.", flags: [MessageFlags.Ephemeral] });
                 return;
             }
 
-            // Check if the button is already disabled
-            if (interaction.component.disabled) {
+            // Check if the button is already disabled by checking the original message's components
+            const originalComponents = interaction.message.components;
+            if (originalComponents.length > 0 && originalComponents[0].components[0].disabled) {
                 await interaction.reply({ content: "❌ This ticket has already been claimed.", flags: [MessageFlags.Ephemeral] });
                 return;
             }
 
-            await interaction.deferUpdate(); // Acknowledge the button click
+            // Acknowledge the button click and edit the original message
+            await interaction.deferUpdate();
 
             // Get the ticket creator from the channel topic
-            const ticketChannel = interaction.channel;
             const creatorId = getTicketCreatorId(ticketChannel.topic);
-            const creator = creatorId ? await client.users.fetch(creatorId) : null;
 
-            // Update the button
-            const claimedButton = new ButtonBuilder()
-                .setCustomId('claimed_ticket')
-                .setLabel(`Claimed by @${member.user.username}`)
-                .setStyle(ButtonStyle.Success)
-                .setDisabled(true);
+            // Create the new green embed
+            const claimedEmbed = new EmbedBuilder()
+                .setColor('Green')
+                .setDescription(`Claimed by <@${interaction.user.id}>`);
 
-            const updatedRow = new ActionRowBuilder().addComponents(claimedButton);
-
-            await interaction.message.edit({ components: [updatedRow] });
-
-            // Create the private thread
-            const thread = await ticketChannel.threads.create({
-                name: `private-trade-${creator ? creator.username : 'unknown'}`,
-                type: ChannelType.PrivateThread,
-                reason: `Private thread for claimed ticket by ${member.user.username}`,
+            // Edit the original message to show the claimed embed and remove the buttons
+            await interaction.message.edit({
+                content: `Claimed by <@${interaction.user.id}>`,
+                embeds: [claimedEmbed],
+                components: []
             });
 
-            // Add the claiming middleman and ticket creator to the thread
-            await thread.members.add(member.id);
-            if (creator) {
-                await thread.members.add(creator.id);
+            // Lock the channel permissions
+            try {
+                // Deny view access for @everyone
+                await ticketChannel.permissionOverwrites.edit(interaction.guild.roles.everyone, {
+                    ViewChannel: false,
+                });
+
+                // Allow access for the ticket opener
+                if (creatorId) {
+                    await ticketChannel.permissionOverwrites.edit(creatorId, {
+                        ViewChannel: true,
+                        SendMessages: true,
+                        ReadMessageHistory: true,
+                    });
+                }
+
+                // Allow access for the claiming MM
+                await ticketChannel.permissionOverwrites.edit(member.id, {
+                    ViewChannel: true,
+                    SendMessages: true,
+                    ReadMessageHistory: true,
+                });
+
+                // Send a message in the channel confirming the claim and the lock
+                await ticketChannel.send(`✅ <@${member.id}> has claimed this ticket. The channel is now locked to all members except the ticket creator and the claiming middleman.`);
+
+            } catch (error) {
+                console.error("Error setting permissions after claim:", error);
+                await ticketChannel.send(`❌ An error occurred while trying to set channel permissions. Please check the bot's role hierarchy and permissions.`);
             }
-
-            // Store thread information for later use (e.g., /adduser command)
-            activeThreads.set(ticketChannel.id, { threadId: thread.id, claimedBy: member.id });
-
-            // Send initial message in the private thread
-            await thread.send(`✅ This is a private thread for <@${member.id}> and ${creator ? `<@${creator.id}>` : 'the ticket creator'}. The trade can now be discussed here.`);
 
         } else if (interaction.customId.startsWith("mm_")) { // Existing .Mminfo button handling
             const state = mminfoStates.get(interaction.message.id);
@@ -812,12 +827,11 @@ client.on('interactionCreate', async interaction => {
         }
     } else if (interaction.isCommand()) { // Handle slash commands
         if (interaction.commandName === 'adduser') {
-            // Check if the command is used in a ticket channel or its associated thread
-            const isTicketChannel = interaction.channel.name.startsWith('ticket-');
-            const isThread = interaction.channel.isThread() && interaction.channel.parent && interaction.channel.parent.name.startsWith('ticket-');
+            const ticketChannel = interaction.channel;
 
-            if (!isTicketChannel && !isThread) {
-                return interaction.reply({ content: "This command can only be used in a middleman ticket channel or an associated thread.", flags: [MessageFlags.Ephemeral] });
+            // Check if the command is used in a ticket channel
+            if (!ticketChannel.name.startsWith('ticket-')) {
+                return interaction.reply({ content: "This command can only be used in a middleman ticket channel.", flags: [MessageFlags.Ephemeral] });
             }
 
             // Check if the user executing the command has the required role (Middleman)
@@ -826,8 +840,6 @@ client.on('interactionCreate', async interaction => {
             }
 
             const targetUser = interaction.options.getUser('target');
-            const ticketChannel = isThread ? interaction.channel.parent : interaction.channel;
-            const thread = isThread ? interaction.channel : null;
 
             try {
                 // Add the user to the main ticket channel
@@ -837,27 +849,17 @@ client.on('interactionCreate', async interaction => {
                     ReadMessageHistory: true
                 });
 
-                // If an associated thread exists, add the user to it as well
-                if (activeThreads.has(ticketChannel.id)) {
-                    const threadId = activeThreads.get(ticketChannel.id).threadId;
-                    const associatedThread = await ticketChannel.threads.fetch(threadId);
-                    if (associatedThread) {
-                        await associatedThread.members.add(targetUser.id);
-                    }
-                }
-
-                await interaction.reply({ content: `✅ <@${targetUser.id}> has been added to this ticket and its private thread (if one exists).`, flags: [MessageFlags.Ephemeral] });
+                await interaction.reply({ content: `✅ <@${targetUser.id}> has been added to this ticket.`, flags: [MessageFlags.Ephemeral] });
             } catch (error) {
                 console.error("Error adding user to ticket:", error);
                 await interaction.reply({ content: `❌ Failed to add <@${targetUser.id}> to the ticket. Please ensure the bot has necessary permissions.`, flags: [MessageFlags.Ephemeral] });
             }
         } else if (interaction.commandName === 'close') { // /close command handler
-            // Check if the command is used in a ticket channel or its associated thread
-            const isTicketChannel = interaction.channel.name.startsWith('ticket-');
-            const isThread = interaction.channel.isThread() && interaction.channel.parent && interaction.channel.parent.name.startsWith('ticket-');
+            const ticketChannel = interaction.channel;
 
-            if (!isTicketChannel && !isThread) {
-                return interaction.reply({ content: "This command can only be used in a middleman ticket channel or an associated thread.", flags: [MessageFlags.Ephemeral] });
+            // Check if the command is used in a ticket channel
+            if (!ticketChannel.name.startsWith('ticket-')) {
+                return interaction.reply({ content: "This command can only be used in a middleman ticket channel.", flags: [MessageFlags.Ephemeral] });
             }
 
             // Check if the user executing the command has the required role (Middleman)
@@ -867,7 +869,6 @@ client.on('interactionCreate', async interaction => {
 
             await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
-            const ticketChannel = isThread ? interaction.channel.parent : interaction.channel;
             const logChannel = client.channels.cache.get(log_channel_id);
 
             if (!logChannel) {
@@ -891,25 +892,6 @@ client.on('interactionCreate', async interaction => {
                     }
                 });
 
-                // Fetch messages from the associated thread if one exists
-                if (activeThreads.has(ticketChannel.id)) {
-                    const threadId = activeThreads.get(ticketChannel.id).threadId;
-                    const associatedThread = await ticketChannel.threads.fetch(threadId);
-                    if (associatedThread) {
-                        const threadMessages = await associatedThread.messages.fetch({ limit: 100 });
-                        const sortedThreadMessages = threadMessages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
-                        transcript += "\n--- Private Thread Messages ---\n\n";
-                        sortedThreadMessages.forEach(msg => {
-                            transcript += `${new Date(msg.createdTimestamp).toLocaleString()} | ${msg.author.tag}: ${msg.content}\n`;
-                            if (msg.attachments.size > 0) {
-                                msg.attachments.forEach(attachment => {
-                                    transcript += `  Attachment: ${attachment.url}\n`;
-                                });
-                            }
-                        });
-                    }
-                }
-
                 // Send transcript to the log channel as a file
                 const buffer = Buffer.from(transcript, 'utf-8');
                 const fileAttachment = {
@@ -927,14 +909,6 @@ client.on('interactionCreate', async interaction => {
                 // Delete the ticket channel and its thread after a delay
                 setTimeout(async () => {
                     try {
-                        if (activeThreads.has(ticketChannel.id)) {
-                            const threadId = activeThreads.get(ticketChannel.id).threadId;
-                            const associatedThread = await ticketChannel.threads.fetch(threadId);
-                            if (associatedThread) {
-                                await associatedThread.delete('Associated ticket channel is being deleted.');
-                                activeThreads.delete(ticketChannel.id);
-                            }
-                        }
                         await ticketChannel.delete('Ticket closed by middleman.');
                     } catch (err) {
                         console.error(`Failed to delete ticket channel ${ticketChannel.name}:`, err);
